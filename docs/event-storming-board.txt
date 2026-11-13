@@ -1,0 +1,63 @@
+SEATWAVE EVENT-STORMING BOARD: one booking, from the show's creation to the reminder
+Written from the session of Module 32, Section 6a. Read left to right in time, one row per sticky.
+Kinds: EVENT (orange, past tense), COMMAND (blue), ACTOR (small yellow), AGGREGATE (large yellow),
+POLICY (lilac, "whenever ... then ..."), SYSTEM (pink, outside SeatWave), READ MODEL (green),
+HOT SPOT (red, an open question or a known pain). Contexts were drawn last, around the events.
+
+ #  time       kind        sticky                                     context
+ 1  weeks      ACTOR       box office                                 catalog
+ 2  weeks      COMMAND     ScheduleEvent                              catalog
+ 3  weeks      AGGREGATE   Event (show, venue, start)                 catalog
+ 4  weeks      EVENT       EventScheduled                             catalog
+ 5  weeks      COMMAND     PriceSection                               catalog
+ 6  weeks      EVENT       SectionPriced                              catalog
+ 7  weeks      EVENT       SeatPlanPublished                          catalog
+ 8  weeks      HOT SPOT    "a price change after a hold: which price does the fan pay?"  catalog/booking
+ 9  on-sale    POLICY      whenever SeatPlanPublished, open its seats for holds         inventory
+10  on-sale    READ MODEL  seat map (Module 16's cache)               inventory
+11  on-sale    ACTOR       fan                                        inventory
+12  on-sale    COMMAND     HoldSeat                                   inventory
+13  on-sale    AGGREGATE   SeatClaim (one per event and seat)         inventory
+14  on-sale    EVENT       SeatHeld                                   inventory
+15  +300 s     POLICY      whenever a hold is 300 s old and ACTIVE, expire it            inventory
+16  +300 s     EVENT       HoldExpired                                inventory
+17  +300 s     HOT SPOT    "expiry fires while the fan is paying" (Module 28, Section 2)  inventory/payment
+18  confirm    COMMAND     ConfirmBooking                             booking
+19  confirm    AGGREGATE   Booking (the purchase and its saga row)    booking
+20  confirm    POLICY      whenever a confirm starts, lock the seat first                booking
+21  confirm    COMMAND     LockSeat                                   inventory
+22  confirm    EVENT       SeatLocked                                 inventory
+23  confirm    COMMAND     ChargePayment                              payment
+24  confirm    SYSTEM      payment provider (p99 2 s)                 payment
+25  confirm    AGGREGATE   Payment (one per provider key)             payment
+26  confirm    EVENT       PaymentCaptured                            payment
+27  confirm    EVENT       PaymentFailed                              payment
+28  confirm    POLICY      whenever PaymentCaptured, confirm the seat                    booking
+29  confirm    COMMAND     ConfirmSeat                                inventory
+30  confirm    EVENT       SeatConfirmed                              inventory
+31  confirm    EVENT       BookingConfirmed                           booking
+32  confirm    POLICY      whenever PaymentFailed, release the seat                      booking
+33  confirm    COMMAND     ReleaseSeat                                inventory
+34  confirm    EVENT       SeatReleased                               inventory
+35  confirm    EVENT       BookingFailed                              booking
+36  confirm    HOT SPOT    "captured but the seat was lost: refund, by whom?"            booking/payment
+37  confirm    COMMAND     RefundPayment                              payment
+38  confirm    EVENT       PaymentRefunded                            payment
+39  after      POLICY      whenever BookingConfirmed, email the fan and plan a reminder  notification
+40  after      EVENT       ConfirmationEmailQueued                    notification
+41  after      EVENT       ReminderScheduled                          notification
+42  after      READ MODEL  my tickets (bookings_by_customer)          booking
+43  -24 h      EVENT       ReminderSent                               notification
+44  later      ACTOR       fan                                        booking
+45  later      COMMAND     CancelBooking                              booking
+46  later      EVENT       BookingCanceled                            booking
+47  later      POLICY      whenever BookingCanceled, release the seat and refund         inventory/payment
+48  night      EVENT       VenuePayoutSettled                         payment
+
+Pivotal events (where the board's language changes and a boundary was drawn):
+  SeatPlanPublished   catalog's work ends; inventory's begins
+  SeatHeld            a fan's claim exists; the purchase has not started
+  PaymentCaptured     money moved: the pivot of Module 28's saga
+  BookingConfirmed    the sale is a fact other contexts react to
+Totals: 48 stickies; 18 events, 10 commands, 7 policies, 4 aggregates, 3 actors,
+        1 system, 2 read models, 3 hot spots; 5 contexts.

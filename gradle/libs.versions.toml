@@ -1,0 +1,38 @@
+# Every version is exact. Each was checked on Maven Central on 13 November 2026.
+[versions]
+result4j = "1.2.0"
+postgresql = "42.7.14"
+h2 = "2.5.252"
+kafka = "4.4.0"
+# kafka-clients 4.4.0 asks for lz4-java 1.11.2 and snappy-java 1.1.10.7, which OSV lists with advisories
+# (Module 27's finding, rechecked 13 November 2026); the build constrains both to the newest.
+lz4 = "1.14.0"
+snappy = "1.1.10.12"
+slf4j = "2.0.20"
+logback = "1.6.6"
+junit = "6.1.3"
+assertj = "3.27.7"
+awaitility = "4.3.0"
+archunit = "1.5.1"
+spotless = "8.11.0"
+googleJavaFormat = "2.0.0"
+jacoco = "0.8.16"
+
+[libraries]
+result4j = { module = "com.github.sviperll:result4j", version.ref = "result4j" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+h2 = { module = "com.h2database:h2", version.ref = "h2" }
+kafka-clients = { module = "org.apache.kafka:kafka-clients", version.ref = "kafka" }
+lz4-java = { module = "at.yawk.lz4:lz4-java", version.ref = "lz4" }
+snappy-java = { module = "org.xerial.snappy:snappy-java", version.ref = "snappy" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+awaitility = { module = "org.awaitility:awaitility", version.ref = "awaitility" }
+archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
+
+[plugins]
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

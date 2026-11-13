@@ -1,0 +1,38 @@
+# This is a Gradle generated file for dependency locking.
+# Manual edits can break the build and are not advised.
+# This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :dependencies --write-locks
+at.yawk.lz4:lz4-java:1.14.0=extractedCompileClasspath,extractedRuntimeClasspath,extractedTestCompileClasspath,extractedTestRuntimeClasspath
+ch.qos.logback:logback-classic:1.6.6=extractedRuntimeClasspath,extractedTestRuntimeClasspath,testRuntimeClasspath
+ch.qos.logback:logback-core:1.6.6=extractedRuntimeClasspath,extractedTestRuntimeClasspath,testRuntimeClasspath
+com.github.luben:zstd-jni:1.5.7-17=extractedRuntimeClasspath,extractedTestRuntimeClasspath
+com.github.sviperll:result4j:1.2.0=compileClasspath,extractedCompileClasspath,extractedRuntimeClasspath,extractedTestCompileClasspath,extractedTestRuntimeClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.h2database:h2:2.5.252=extractedRuntimeClasspath,extractedTestRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
+com.tngtech.archunit:archunit:1.5.1=testCompileClasspath,testRuntimeClasspath
+net.bytebuddy:byte-buddy:1.18.3=extractedTestCompileClasspath,extractedTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.apache.kafka:kafka-clients:4.4.0=extractedCompileClasspath,extractedRuntimeClasspath,extractedTestCompileClasspath,extractedTestRuntimeClasspath
+org.apiguardian:apiguardian-api:1.1.2=extractedTestCompileClasspath,testCompileClasspath
+org.assertj:assertj-core:3.27.7=extractedTestCompileClasspath,extractedTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.checkerframework:checker-qual:3.55.1=extractedRuntimeClasspath,extractedTestRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
+org.jacoco:org.jacoco.agent:0.8.16=jacocoAgent,jacocoAnt
+org.jacoco:org.jacoco.ant:0.8.16=jacocoAnt
+org.jacoco:org.jacoco.core:0.8.16=jacocoAnt
+org.jacoco:org.jacoco.report:0.8.16=jacocoAnt
+org.jspecify:jspecify:1.0.0=extractedTestCompileClasspath,testCompileClasspath
+org.junit.jupiter:junit-jupiter-api:6.1.3=extractedTestCompileClasspath,extractedTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.junit.jupiter:junit-jupiter-engine:6.1.3=extractedTestRuntimeClasspath,testRuntimeClasspath
+org.junit.jupiter:junit-jupiter-params:6.1.3=extractedTestCompileClasspath,extractedTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.junit.jupiter:junit-jupiter:6.1.3=extractedTestCompileClasspath,extractedTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.junit.platform:junit-platform-commons:6.1.3=extractedTestCompileClasspath,extractedTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.junit.platform:junit-platform-engine:6.1.3=extractedTestRuntimeClasspath,testRuntimeClasspath
+org.junit.platform:junit-platform-launcher:6.1.3=extractedTestRuntimeClasspath,testRuntimeClasspath
+org.junit:junit-bom:6.1.3=extractedTestCompileClasspath,extractedTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.opentest4j:opentest4j:1.3.0=extractedTestCompileClasspath,extractedTestRuntimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.ow2.asm:asm-commons:9.11.1=jacocoAnt
+org.ow2.asm:asm-tree:9.11.1=jacocoAnt
+org.ow2.asm:asm:9.11.1=jacocoAnt
+org.postgresql:postgresql:42.7.14=extractedRuntimeClasspath,extractedTestRuntimeClasspath,runtimeClasspath,testRuntimeClasspath
+org.slf4j:slf4j-api:2.0.19=testCompileClasspath,testRuntimeClasspath
+org.slf4j:slf4j-api:2.0.20=extractedCompileClasspath,extractedRuntimeClasspath,extractedTestCompileClasspath,extractedTestRuntimeClasspath
+org.xerial.snappy:snappy-java:1.1.10.12=extractedCompileClasspath,extractedRuntimeClasspath,extractedTestCompileClasspath,extractedTestRuntimeClasspath
+empty=annotationProcessor,extractedAnnotationProcessor,extractedTestAnnotationProcessor,testAnnotationProcessor,toolsAnnotationProcessor,toolsCompileClasspath,toolsRuntimeClasspath

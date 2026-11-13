@@ -1,0 +1,90 @@
+SEATWAVE CONTEXT MAP (Module 32)
+
+CONTEXTS: what each one decides, and its language
+  catalog       what is on sale, where and at what price. "event" = a show; "seat" = a place on a
+                plan (section, number); writes rarely, read 20,000 times a second at the peak.
+  inventory     who may claim which seat, and for how long. "seat" = a claimable unit of one show,
+                with a state; "hold" = a 300-second claim; the hottest writes (13,333 a second).
+  booking       turning a hold into a paid purchase. "booking" = a purchase and its saga row;
+                orders the steps of the confirm and publishes BookingConfirmed.
+  payment       taking and returning money once per provider key. "charge", "capture", "refund";
+                the only context that talks to the payment provider.
+  notification  what the fan is told, and when. "event" = a domain event it reacts to; "booking"
+                = a reason to send a message.
+
+RELATIONSHIPS: upstream -> downstream, type, and what crosses
+  catalog -> inventory       open host service + conformist: inventory asks Catalog.offerFor
+                             whether a seat exists and keeps the catalog's seat identity
+                             (event_id, seat_label) exactly
+  catalog -> booking         customer-supplier: booking reads the offer (price, show start)
+                             through Catalog.offerFor; booking's needs shape that interface
+  inventory -> booking       customer-supplier: booking calls lockForPayment, confirm, release
+  payment -> booking         customer-supplier: booking calls charge with payment's own Money;
+                             booking translates the catalog's price into it
+  payment provider -> payment  anticorruption layer: payment turns the provider's codes and
+                             references into Captured or Declined; no provider type leaves it
+  booking -> notification    published language + conformist: notification reacts to
+                             BookingConfirmed and keeps its own copy of what it needs
+  identity (Module 11 tokens) -> every context  open host service: the token's subject is the
+                             fan; SeatWave conforms to it
+  platform <-> every context shared kernel: Database (local transactions) and DomainEvents
+                             (in-process publication); no business rule; changed only with the
+                             agreement of every module's owner
+
+TABLE OWNERS: one owner per table, the module whose schema holds it
+  catalog.venues               owner: catalog
+  catalog.events               owner: catalog
+  catalog.sections             owner: catalog
+  catalog.seats                owner: catalog
+  catalog.stored_objects       owner: catalog        (posters, split from Module 29's table)
+  inventory.holds              owner: inventory
+  inventory.hold_reservations  owner: inventory
+  inventory.idempotency_keys   owner: inventory      (POST /v1/holds, split from Module 7's table)
+  inventory.outbox             owner: inventory
+  inventory.outbox_relay_fence owner: inventory
+  booking.customers            owner: booking
+  booking.bookings             owner: booking
+  booking.booking_sagas        owner: booking
+  booking.bookings_by_customer owner: booking
+  booking.idempotency_keys     owner: booking        (POST /v1/bookings, split from Module 7's table)
+  booking.outbox               owner: booking
+  booking.outbox_relay_fence   owner: booking
+  booking.processed_messages   owner: booking        (the bookings-by-customer-indexer group)
+  booking.stored_objects       owner: booking        (ticket PDFs, split from Module 29's table)
+  payment.payments             owner: payment
+  payment.venue_payouts        owner: payment
+  payment.settlement_fences    owner: payment
+  payment.outbox               owner: payment
+  payment.outbox_relay_fence   owner: payment
+  notification.emails          owner: notification
+  notification.reminders       owner: notification
+  notification.processed_messages owner: notification (the notifications-email group)
+
+TABLES BEFORE: the tangle's one schema, and which contexts' code touched each table
+  venues               touched by: catalog payment
+  events               touched by: catalog booking notification
+  sections             touched by: catalog booking
+  seats                touched by: catalog inventory booking
+  customers            touched by: booking inventory notification
+  holds                touched by: inventory booking payment
+  bookings             touched by: booking notification payment
+  idempotency_keys     touched by: booking inventory
+  payments             touched by: payment booking
+  booking_sagas        touched by: booking
+  outbox               touched by: booking inventory payment
+  outbox_relay_fence   touched by: booking inventory payment
+  processed_messages   touched by: notification booking
+  reminders            touched by: notification booking
+  bookings_by_customer touched by: booking
+  hold_reservations    touched by: inventory
+  venue_payouts        touched by: payment
+  settlement_fences    touched by: payment
+  stored_objects       touched by: catalog booking
+
+RULES
+  1. No module reads or writes another module's tables or uses its internal classes.
+  2. A module's tables are reached only through that module's interface or its events.
+  3. One local transaction may span modules only through their interfaces, inside one
+     deployable and one database; the provider call never runs inside a transaction.
+  4. No foreign key crosses a schema.
+  5. A module becomes a service only when the extraction rule of Section 6 says so.

@@ -1,0 +1,164 @@
+# SeatWave's modular monolith stack for Module 32, under the Compose project name seatwave-modulith:
+# one PostgreSQL (one schema per module, one role per module) and, for the extraction step, one
+# Kafka broker in KRaft mode with Module 27's topic seatwave.bookings. Start and stop it with
+# scripts/stack.sh, which brings everything down with "down -v". The deployable and the extracted
+# notification service run on the host as plain java processes (the Gradle tasks).
+#
+# Images, pinned by tag and digest, checked on Docker Hub on 13 November 2026, each with an arm64
+# variant: postgres:18.6 (Docker Official Image, the pin of Modules 13 to 42, updated 6 November
+# 2026) and apache/kafka:4.4.0 (the vendor's own image, Modules 27 and 28, updated 22 October 2026).
+# Ports on 127.0.0.1 only, from Module 32's range 23200 to 23299. Nothing runs privileged, nothing
+# uses the host network or the Docker socket, and the only folder mounted is this project's
+# db/init, read-only.
+#
+# Memory: the Docker VM has 8 GB for every project on this machine, so the stack has ONE broker
+# with a 256 MB heap in a 640 MB container, as Module 28's does: the outbox, the relay and the
+# consumer's claim do not depend on the broker count, and Module 27 shows replication. PostgreSQL
+# gets 512 MB; kafka-init 384 MB while it runs. About 1.5 GB in all.
+name: seatwave-modulith
+
+services:
+  postgres:
+    image: postgres:18.6@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+    environment:
+      # The superuser is used only by db/init/10-roles.sh and the rollout's psql runs inside the
+      # container; SeatWave's owner, deployable, module and service logins are separate roles.
+      POSTGRES_USER: postgres
+      POSTGRES_DB: seatwave
+      # Every password is a file generated at run time into .secrets (scripts/stack.sh up) and
+      # removed by scripts/stack.sh down, together with the database that used it.
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+      - owner_password
+      - app_password
+      - catalog_password
+      - inventory_password
+      - booking_password
+      - payment_password
+      - notification_password
+      - service_password
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    # The entrypoint starts as root to own the data folder, then runs PostgreSQL as its own user.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    cpus: 2
+    mem_limit: 512m
+    shm_size: 128m
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=60"]
+    tmpfs:
+      - /var/run/postgresql
+      - /tmp
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:23210:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "seatwave"]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+
+  kafka:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: 2
+    mem_limit: 640m
+    # A port that answers is enough here: kafka-init's command waits for the broker itself.
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "19092"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    environment:
+      # 16 bytes in base64, as kafka-storage.sh random-uuid prints it; the image formats the log
+      # folder with it on first start.
+      CLUSTER_ID: c2VhdHdhdmUtbW9kdWxpdGg
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:29093,PLAINTEXT_HOST://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,PLAINTEXT_HOST://127.0.0.1:23290
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # One broker cannot hold three copies of the internal topics; production keeps 3 (Module 27).
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Topics are created on purpose, by kafka-init and by the tests for their own topics.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_HEAP_OPTS: -Xmx256m -Xms256m
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    ports:
+      - "127.0.0.1:23290:9092"
+
+  # Module 27's booking topic: keyed by booking id, 24 partitions like Module 27's, one replica here.
+  kafka-init:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 384m
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_HEAP_OPTS: -Xmx128m
+    entrypoint:
+      - /opt/kafka/bin/kafka-topics.sh
+      - --bootstrap-server
+      - kafka:19092
+      - --create
+      - --if-not-exists
+      - --topic
+      - seatwave.bookings
+      - --partitions
+      - "24"
+      - --replication-factor
+      - "1"
+    restart: "no"
+
+secrets:
+  postgres_password:
+    file: ./.secrets/postgres.password
+  owner_password:
+    file: ./.secrets/seatwave_owner.password
+  app_password:
+    file: ./.secrets/seatwave_app.password
+  catalog_password:
+    file: ./.secrets/catalog_module.password
+  inventory_password:
+    file: ./.secrets/inventory_module.password
+  booking_password:
+    file: ./.secrets/booking_module.password
+  payment_password:
+    file: ./.secrets/payment_module.password
+  notification_password:
+    file: ./.secrets/notification_module.password
+  service_password:
+    file: ./.secrets/notification_service.password
+
+volumes:
+  pgdata:
+  kafka-data:

@@ -1,0 +1,25 @@
+SeatWave as a modular monolith: 5 modules, 1 deployable, 1 database
+Part 1. A fan confirms: lock, charge, sell
+  fan 1001 holds A-7: held for 300 s
+  fan 1001 confirms: confirmed A-7 (local transactions committed: 3)
+Part 2. The card is declined: the seat goes back on sale
+  fan 1002 holds A-8: held for 300 s
+  fan 1002 confirms: failed: card declined by the provider (local transactions committed: 3)
+Part 3. The hold expired before the confirm
+  fan 1003 holds A-9: held for 300 s
+  fan 1003 confirms: refused: hold is expired (local transactions committed: 1)
+  fan 1004 holds A-9: held for 300 s
+Part 4. One seat, one claim
+  fan 1005 holds A-7: refused: seat A-7 is already claimed
+Part 5. A listener fails inside the confirm's transaction
+  fan 1004 confirms: error, rolled back: listener failed (simulated by the lab) (local transactions committed: 2)
+  left behind             PAYMENT_REQUESTED A-9 CONFIRMING CAPTURED
+Part 6. The stuck-saga sweeper finishes it (Module 28)
+  sweeper finds sagas unmoved for over 300 s: [confirmed A-9] (local transactions committed: 3)
+Tables after the run, each read in its owner's schema:
+  inventory.holds         A-7 CONFIRMED | A-8 RELEASED | A-9 EXPIRED | A-9 CONFIRMED
+  booking.bookings        A-7 80.00 USD | A-9 80.00 USD
+  booking.booking_sagas   COMPENSATED | COMPLETED | COMPLETED
+  payment.payments        CAPTURED 80.00 | CAPTURED 80.00 | DECLINED 80.00
+  notification.emails     Seat A-7 for event 1 is yours. The show starts at 2026-12-08T20:20:51.783Z. | Seat A-9 for event 1 is yours. The show starts at 2026-12-08T20:20:51.783Z.
+  notification.reminders  2026-12-07T20:20:51.783Z | 2026-12-07T20:20:51.783Z

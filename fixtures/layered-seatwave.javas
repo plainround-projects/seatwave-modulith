@@ -1,0 +1,306 @@
+//// The same confirm as the modular monolith, arranged by technical layer the way the tangle grew:
+//// one model shared by every service, every repository reading any table of the one schema.
+//// The course's capture script splits this bundle at each FILE line into a source tree and compiles it.
+//// FILE: io/plainround/seatwave/layered/model/Hold.java
+package io.plainround.seatwave.layered.model;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/** A hold row, shared by every service that needs one. */
+public record Hold(UUID holdId, long eventId, String seatLabel, long customerId, String state,
+    Instant expiresAt) {
+
+  /** The hold rule: a fan may pay only for an ACTIVE hold that has not expired. */
+  public boolean canBePaidAt(Instant now) {
+    return "ACTIVE".equals(state) && expiresAt.isAfter(now);
+  }
+}
+//// FILE: io/plainround/seatwave/layered/model/BookingConfirmed.java
+package io.plainround.seatwave.layered.model;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/** Published after a sale. */
+public record BookingConfirmed(UUID bookingId, long customerId, long eventId, String seatLabel,
+    Instant showStartsAt, Instant confirmedAt) {}
+//// FILE: io/plainround/seatwave/layered/repository/HoldRepository.java
+package io.plainround.seatwave.layered.repository;
+
+import io.plainround.seatwave.layered.model.Hold;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.UUID;
+
+/** Every query on holds. */
+public final class HoldRepository {
+
+  private final Connection connection;
+
+  public HoldRepository(Connection connection) {
+    this.connection = connection;
+  }
+
+  public Optional<Hold> find(UUID holdId) throws SQLException {
+    try (PreparedStatement query = connection.prepareStatement(
+        "SELECT event_id, seat_label, customer_id, state, expires_at FROM holds WHERE hold_id = ?")) {
+      query.setObject(1, holdId);
+      try (ResultSet row = query.executeQuery()) {
+        return row.next() ? Optional.of(new Hold(holdId, row.getLong(1), row.getString(2),
+            row.getLong(3), row.getString(4), row.getObject(5, java.time.OffsetDateTime.class)
+                .toInstant())) : Optional.empty();
+      }
+    }
+  }
+
+  public boolean lock(UUID holdId, UUID bookingId, Instant now) throws SQLException {
+    try (PreparedStatement update = connection.prepareStatement(
+        "UPDATE holds SET state = 'CONFIRMING', booking_id = ? WHERE hold_id = ? AND state = 'ACTIVE' AND expires_at > ?")) {
+      update.setObject(1, bookingId);
+      update.setObject(2, holdId);
+      update.setObject(3, now.atOffset(ZoneOffset.UTC));
+      return update.executeUpdate() == 1;
+    }
+  }
+
+  public void markState(UUID holdId, String state) throws SQLException {
+    try (PreparedStatement update = connection.prepareStatement(
+        "UPDATE holds SET state = ? WHERE hold_id = ?")) {
+      update.setString(1, state);
+      update.setObject(2, holdId);
+      update.executeUpdate();
+    }
+  }
+}
+//// FILE: io/plainround/seatwave/layered/repository/PaymentRepository.java
+package io.plainround.seatwave.layered.repository;
+
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.UUID;
+
+/** Payments, and a second look at holds "to be safe" before money moves. */
+public final class PaymentRepository {
+
+  private final Connection connection;
+
+  public PaymentRepository(Connection connection) {
+    this.connection = connection;
+  }
+
+  public boolean holdIsStillPayable(UUID holdId, Instant now) throws SQLException {
+    try (PreparedStatement query = connection.prepareStatement(
+        "SELECT 1 FROM holds WHERE hold_id = ? AND state IN ('ACTIVE', 'CONFIRMING') AND expires_at > ?")) {
+      query.setObject(1, holdId);
+      query.setObject(2, now.atOffset(ZoneOffset.UTC));
+      try (ResultSet row = query.executeQuery()) {
+        return row.next();
+      }
+    }
+  }
+
+  public void record(String providerKey, UUID bookingId, String state, BigDecimal amount)
+      throws SQLException {
+    try (PreparedStatement insert = connection.prepareStatement(
+        "INSERT INTO payments (provider_key, booking_id, state, amount, currency) VALUES (?, ?, ?, ?, 'USD')")) {
+      insert.setString(1, providerKey);
+      insert.setObject(2, bookingId);
+      insert.setString(3, state);
+      insert.setBigDecimal(4, amount);
+      insert.executeUpdate();
+    }
+  }
+}
+//// FILE: io/plainround/seatwave/layered/repository/SectionRepository.java
+package io.plainround.seatwave.layered.repository;
+
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+/** Prices, read by whoever needs one. */
+public final class SectionRepository {
+
+  private final Connection connection;
+
+  public SectionRepository(Connection connection) {
+    this.connection = connection;
+  }
+
+  public BigDecimal priceOf(long eventId, String seatLabel) throws SQLException {
+    try (PreparedStatement query = connection.prepareStatement(
+        "SELECT sections.price FROM seats JOIN sections ON sections.event_id = seats.event_id AND sections.section_code = seats.section_code WHERE seats.event_id = ? AND seats.seat_label = ?")) {
+      query.setLong(1, eventId);
+      query.setString(2, seatLabel);
+      try (ResultSet row = query.executeQuery()) {
+        row.next();
+        return row.getBigDecimal(1);
+      }
+    }
+  }
+}
+//// FILE: io/plainround/seatwave/layered/repository/BookingRepository.java
+package io.plainround.seatwave.layered.repository;
+
+import io.plainround.seatwave.layered.model.Hold;
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.UUID;
+
+/** Bookings. */
+public final class BookingRepository {
+
+  private final Connection connection;
+
+  public BookingRepository(Connection connection) {
+    this.connection = connection;
+  }
+
+  public void insert(UUID bookingId, Hold hold, BigDecimal price, Instant confirmedAt)
+      throws SQLException {
+    try (PreparedStatement insert = connection.prepareStatement(
+        "INSERT INTO bookings (booking_id, hold_id, event_id, seat_label, customer_id, price, currency, confirmed_at) VALUES (?, ?, ?, ?, ?, ?, 'USD', ?)")) {
+      insert.setObject(1, bookingId);
+      insert.setObject(2, hold.holdId());
+      insert.setLong(3, hold.eventId());
+      insert.setString(4, hold.seatLabel());
+      insert.setLong(5, hold.customerId());
+      insert.setBigDecimal(6, price);
+      insert.setObject(7, confirmedAt.atOffset(ZoneOffset.UTC));
+      insert.executeUpdate();
+    }
+  }
+}
+//// FILE: io/plainround/seatwave/layered/service/PaymentService.java
+package io.plainround.seatwave.layered.service;
+
+import io.plainround.seatwave.layered.model.Hold;
+import io.plainround.seatwave.layered.repository.PaymentRepository;
+import java.math.BigDecimal;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.UUID;
+
+/** Charges a hold's price. */
+public final class PaymentService {
+
+  private final PaymentRepository paymentRepository;
+
+  public PaymentService(PaymentRepository paymentRepository) {
+    this.paymentRepository = paymentRepository;
+  }
+
+  public boolean charge(Hold hold, UUID bookingId, BigDecimal price, Instant now)
+      throws SQLException {
+    if (!paymentRepository.holdIsStillPayable(hold.holdId(), now)) {
+      return false;
+    }
+    paymentRepository.record("seatwave-hold-" + hold.holdId(), bookingId, "CAPTURED", price);
+    return true;
+  }
+}
+//// FILE: io/plainround/seatwave/layered/service/NotificationService.java
+package io.plainround.seatwave.layered.service;
+
+import io.plainround.seatwave.layered.model.BookingConfirmed;
+import java.util.Locale;
+
+/** Builds the confirmation email. */
+public final class NotificationService {
+
+  public String emailFor(BookingConfirmed confirmed) {
+    return String.format(Locale.ROOT, "Seat %s for event %d is yours. The show starts at %s.",
+        confirmed.seatLabel(), confirmed.eventId(), confirmed.showStartsAt());
+  }
+}
+//// FILE: io/plainround/seatwave/layered/service/BookingService.java
+package io.plainround.seatwave.layered.service;
+
+import io.plainround.seatwave.layered.model.BookingConfirmed;
+import io.plainround.seatwave.layered.model.Hold;
+import io.plainround.seatwave.layered.repository.BookingRepository;
+import io.plainround.seatwave.layered.repository.HoldRepository;
+import io.plainround.seatwave.layered.repository.SectionRepository;
+import java.math.BigDecimal;
+import java.sql.SQLException;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.UUID;
+
+/** The confirm: every step, every table, one class. */
+public final class BookingService {
+
+  private final HoldRepository holdRepository;
+  private final SectionRepository sectionRepository;
+  private final BookingRepository bookingRepository;
+  private final PaymentService paymentService;
+  private final NotificationService notificationService;
+  private final Clock clock;
+
+  public BookingService(HoldRepository holdRepository, SectionRepository sectionRepository,
+      BookingRepository bookingRepository, PaymentService paymentService,
+      NotificationService notificationService, Clock clock) {
+    this.holdRepository = holdRepository;
+    this.sectionRepository = sectionRepository;
+    this.bookingRepository = bookingRepository;
+    this.paymentService = paymentService;
+    this.notificationService = notificationService;
+    this.clock = clock;
+  }
+
+  public String confirm(UUID holdId, long customerId) throws SQLException {
+    Instant now = clock.instant();
+    Hold hold = holdRepository.find(holdId).orElseThrow();
+    if (hold.customerId() != customerId || !hold.canBePaidAt(now)) {
+      return "refused";
+    }
+    UUID bookingId = UUID.randomUUID();
+    holdRepository.lock(holdId, bookingId, now);
+    BigDecimal price = sectionRepository.priceOf(hold.eventId(), hold.seatLabel());
+    if (!paymentService.charge(hold, bookingId, price, now)) {
+      holdRepository.markState(holdId, "RELEASED");
+      return "failed";
+    }
+    holdRepository.markState(holdId, "CONFIRMED");
+    bookingRepository.insert(bookingId, hold, price, now);
+    return notificationService.emailFor(new BookingConfirmed(bookingId, customerId,
+        hold.eventId(), hold.seatLabel(), now, now));
+  }
+}
+//// FILE: io/plainround/seatwave/layered/controller/BookingController.java
+package io.plainround.seatwave.layered.controller;
+
+import io.plainround.seatwave.layered.service.BookingService;
+import java.sql.SQLException;
+import java.util.UUID;
+
+/** POST /v1/bookings. */
+public final class BookingController {
+
+  private final BookingService bookingService;
+
+  public BookingController(BookingService bookingService) {
+    this.bookingService = bookingService;
+  }
+
+  public String confirm(UUID holdId, long customerId) throws SQLException {
+    return bookingService.confirm(holdId, customerId);
+  }
+}
